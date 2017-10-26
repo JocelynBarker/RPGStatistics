@@ -1,0 +1,161 @@
+---
+title: 'Role Playing with Probabilities: The Importance of Distributions'
+author: "Jocelyn Barker"
+date: "September 11, 2017"
+output: html_document
+---
+
+I have a confession to make.  I am not just a statistics nerd; I am also a role-playing games geek.  I have been playing Dungeons and Dragons (DnD) and its variants since high school.  While playing with my friends the other day it occurred to me, DnD may have some lessons to share in my job as a data scientist.  Hidden in its dice rolling mechanics is a perfect little experiment for demonstrating at least one reason why practitioners may resist using statistical methods even when we can demonstrate a better average performance than previous methods.  It is all about distributions.  While our averages may be higher, the distribution of individual data points can be disasterous.
+
+## Why Use Role-Playing Games as an Example?
+
+Partially because it means I get to think about one of my hobbies at work.  More practically, because consequences of probability distributions can be hard to examine in the real world.  How do you quantify the impact of having your driverless car misclassify objects on the road?  Games like DnD on the other hand were built around quantifying the impact of decisions.  You decide to do something, add up some numbers that represent the difficulty of what you want to do, and then roll dice to add in some randomness.  It also means it is a great environment to study how the distribution of the randomness impacts the outcomes.
+
+## A Little Background on DnD
+
+One of the core mechanics of playing DnD and related role-playing games involve rolling a 20 sided die (often referred to as a d20).  If you want your character to do something like climb a tree, there is some assigned difficulty for it (eg. 10) and if you roll higher than that number, you achieve your goal.  If your character is good at that thing, they get to add a skill modifier (eg. 5) to the number they roll making it more likely that they can do what they wanted to do.
+If the thing you want to do involves another character, things change a little.  Instead of having a set difficulty like for climbing a tree, the difficulty is an opposed roll from the other player.  So if Character A wants to sneak past Character B, both players roll d20s and Character A adds their "stealth" modifier against Character B's "perception" modifier.  Whoever between them gets a higher number wins with a tie going to the "perceiver".  Ok, I promise, that is all the DnD rules you need to know for this blog post.
+
+## Alternative Rolling Mechanics: What's in a Distribution?
+
+So here is where the stats nerd in me got excited.  Some people change the rules of rolling to make different distributions.  The default distribution is pretty boring, 20 numbers with equal probability:
+
+```{r d20Distribution, echo = FALSE}
+barplot(setNames(rep(1/20,20), 1:20), xlab = "Roll Value", ylab = "Probability of Rolling", ylim = c(0,0.1), main = "Roll 1d20")
+```
+
+One common way people modify this is with the idea of "critical".  The idea is that sometimes people do way better or worse than average.  To reflect this, if you roll a 20, instead of adding 20 to your modifier, you add 30.  If you roll a 1, you subtract 10 from your modifier.
+
+```{r critDistribution, echo = FALSE}
+barplot(setNames(c(1/20,rep(0,11), rep(1/20,18), rep(0,10), 1/20), -10:30), xlab = "Roll Value", ylab = "Probability of Rolling", ylim = c(0,0.1), main = "Roll with Criticals")
+```
+
+Another stats nerd must have made up the last distribution.  The idea for constructing it is weird, but the behavior is much more Gaussian.  It is called 3z8 because you roll 3 eight-sided dice that are numbered 0-7 and sum them up giving a value between 0 and 21.  1-20 act as in the standard rules, but 0 and 21 are now treated like criticals (but at a much lower frequency than before).
+
+```{r z8Distribution, echo = FALSE}
+oneZ8 = expand.grid(0:7,0:7,0:7)
+oneZ8prob = rowSums(oneZ8)
+oneZ8prob[oneZ8prob == 0] = -10
+oneZ8prob[oneZ8prob == 21] = 30
+oneZ8probs <- table(oneZ8prob)/length(oneZ8prob)
+barplot(c(oneZ8probs[1],rep(0,10), oneZ8probs[2:21], rep(0,9), oneZ8probs[22]), xlab = "Roll Value", ylab = "Probability of Rolling", ylim = c(0,0.1), main = "Roll 3z8")
+```
+
+The cool thing is these distributions have almost identical expected values (10.5 for d20, 10.45 with criticals, and 10.498 for 3z8), but very different distributions.  How do these distributions affect the game?  What can we learn from this as statisticians?
+
+##Our Case Study: Sneaking Past the Guards
+
+To examine how our distributions affects outcome, we will look at a scenario where a character, who we will call the rogue, wants to sneak past three guards.  If any of the guard's perception is greater than or equal to the rogue's stealth, we will say the rogue loses the encounter, if they are all lower, the rogue is successful.  We can already see the rogue is at a disadvantage; any one of the guards succeeding is a failure for her.  We note that assuming all the guards have the same perception modifier, the actual value of the modifier for the guards doesn't matter, just the difference between their modifier and the modifier of the rogue because the two modifiers are just a scalar adjustment of the value rolled.  In other words, it doesn't matter if the guards are average Joes with a 0 modifier and the rogue is reasonably sneaky with a +5 or if the guards are hyper alert with a +15 and the rogue is a ninja with a +20; the probability of success is the same in the two scenarios.
+
+### Computing the Max Roll for the Guards
+
+Lets start off getting a feeling for what the dice rolls will look like.  Since the rogue is only rolling one die, her probability distribution looks the same as the distribution of the dice from the previous section.  Now, lets consider the guards.  In order for the rogue to fail to sneak by, she only needs to be seen by one of the guards. That means we just need to look at the probability that the maximum roll for one of the guards is $n$ for $n  \in 1,..,20$. We will start with our default distribution.  The number of ways you can have 3 dice roll a value of $n$ or less is $n^3$. Therefore the number of ways you can have the max value of the dice be exactly $n$ is the number of ways you can roll $n$ or less minus the number of ways where all the dice are $n - 1$ or less giving us $n^3 - (n - 1)^3$ ways to roll a max value of $n$. Finally, we can divide by the total number of roll combinations for an 20-sided dice, $20^3$, giving us our final probabilities of:
+
+\[\frac{n^3 - (n-1)^3}{20^3} for \{n \in 1, ..., 20\}\]
+
+```{r bestGuardd20, echo = FALSE}
+bestguard <- setNames(vapply(1:20,function(x) (x^3 - (x-1)^3)/20^3, numeric(1)), 1:20)
+barplot(bestguard, xlab = "Best Roll from a Guard - 1d20", ylab = "Probability")
+```
+
+The only thing that changes when we add criticals to the mix is that now the probabilities previously assigned to 1 get re-assigned to -10 and those assigned to 20 get reassigned to 30 giving us the following distribution.
+
+```{r bestGuardCrit, echo = FALSE}
+bestguardcrit <- setNames(vapply(1:20,function(x) (x^3 - (x-1)^3)/20^3, numeric(1)), c(-10,2:19,30))
+barplot(setNames(c(bestguardcrit[1],rep(0,11), bestguardcrit[2:19], rep(0,10), bestguardcrit[20]), -10:30), xlab = "Best Roll from a Guard - With Criticals", ylab = "Probability")
+```
+
+This means our guards get a critical success ~14% of the time!  This will have a big impact on our final distributions.
+
+Finally, lets look at the distribution for the guards using the 3z8 system.
+
+```{r bestGuard3z8, echo = FALSE}
+gaurdrollsz = expand.grid(c(-10, 1:20, 30),c(-10, 1:20, 30),c(-10, 1:20, 30))
+bestgaurdz = cbind(apply(gaurdrollsz, 1, function(x) prod(oneZ8probs[as.character(x)])), apply(gaurdrollsz, 1, max))
+bestgaurdz = aggregate(bestgaurdz[,1], by = list(roll = bestgaurdz[,2]), FUN = sum)
+barplot(setNames(c(bestgaurdz[,"x"][1],rep(0,10), bestgaurdz[,"x"][2:21], rep(0,9), bestgaurdz[,"x"][22]), -10:30), xlab = "Best Roll from a Guard - 3z8", ylab = "Probability")
+```
+
+In the previous distributions, the maximum value became the single most likely roll.  Because of the the low probability of rolling a 21 in the 3z8 distribution, this distribution still skews right, but peaks at 14.  In this distribution, criticals only occur ~0.6% of the time; much less than the previous distribution.
+
+### Impact on Outcome
+
+Now that we have looked at the distributions of the rolls for the rogue and the guards, lets see what our final outcomes look like.  As previously mentioned, we don't need to worry about the specific modifiers for the two groups, just the difference between them.  Below is a plot showing the relative modifier for the rogue on the x-axis and the probability of success on the y-axis for our three different probability distributions.
+
+```{r outcomeDistributions, echo = FALSE}
+encounter <- expand.grid(1:20, 1:20)
+encounter <- cbind(encounter, prob = rep(bestguard, 20)*0.05)
+success <- vapply(0:30, function(x) sum(encounter[encounter[,1] < (encounter[,2] + x), 3]), numeric(1))
+
+encounterc <- encounter
+encounterc[ ,1:2][encounterc[, 1:2] == 1] <- -10
+encounterc[ ,1:2][encounterc[, 1:2] == 20] <- 30
+successc <- vapply(0:30, function(x) sum(encounterc[encounterc[,1] < (encounterc[,2] + x), 3]), numeric(1))
+
+encounterz <- expand.grid(c(-10,1:20,30), c(-10,1:20,30))
+encounterz <- cbind(encounterz, prob = apply(expand.grid(bestgaurdz[,"x"], oneZ8probs), 1, prod))
+successz <- vapply(0:30, function(x) sum(encounterz[encounterz[,1] < (encounterz[,2] + x), 3]), numeric(1))
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+plot(0:30, success, type = "l", xlab = "Relative Modifier", ylab = "Probability of Success", ylim = 0:1, col = cbPalette[1])
+points(0:30, success, col = cbPalette[1])
+lines(0:30, successc, col = cbPalette[2])
+points(0:30, successc, col = cbPalette[2])
+lines(0:30, successz, col = cbPalette[3])
+points(0:30, successz, col = cbPalette[3])
+legend("bottomright", c("Roll 1d20", "With Criticals", "Roll 3z8"), fill = cbPalette[1:3], bty = "n")
+```
+
+We see that for the entire curve, our odds of success goes down when we add criticals and for most of the curve, it goes up for 3z8.  Lets think about why.  We know the guards are more likely to roll a 20 and less likely to roll a 1 from the distribution we made earlier.  This happens about 14% of the time, which is pretty common, and when it happens, the rogue has to have a very high modifier and still roll well to overcome it unless they also roll a 20.  On the other hand, with 3z8 system, criticals are far less common and everyone rolls close to average more of the time.  The expected value for the rogue is ~10.5, where as it is ~14 for the guards, so when everyone performs close to average, the rogue only needs a small modifier to have a reasonable chance of success.
+
+To illustrate how much of a difference there is between the two, lets consider what would be the minimum modifier needed to have a certain probability of success.
+
+---------------------------------------------------------
+Probability  Roll 1d20      With Criticals Roll 3z8
+------------ -------------- -------------- --------------
+50%          6              7              4
+
+75%          11             13             8
+
+90%          15             22             11
+
+95%          17             27             13
+---------------------------------------------------------
+
+We see from the table that reasonably small modifiers make a big difference in the 3z8 system, where as very large modifiers are needed to have a reasonable chance of success when criticals are added.  To give context on just how large this is, when a someone is invisible, this only adds +20 to their stealth checks when they are moving.  In other words, in the system with criticals, our rogue could literally be invisible sneaking past a group of not particularly observant gaurds and have a reasonable chance of failing.
+
+The next thing to consider is our rogue may have to make multiple checks to sneak into a place (eg. one to sneak into the courtyard, one to sneak from bush to bush, and then a final one to sneak over the wall).  If we look at the results of our rogue making three successful checks in a row, our probabilities change even more.
+
+
+```{r outcomes5Rolls, echo = FALSE}
+plot(0:30, success^3, type = "l", xlab = "Relative Modifier", ylab = "Probability of Success", ylim = 0:1, col = cbPalette[1])
+points(0:30, success^3, col = cbPalette[1])
+lines(0:30, successc^3, col = cbPalette[2])
+points(0:30, successc^3, col = cbPalette[2])
+lines(0:30, successz^3, col = cbPalette[3])
+points(0:30, successz^3, col = cbPalette[3])
+legend("bottomright", c("Roll 1d20", "With Criticals", "Roll 3z8"), fill = cbPalette[1:3], bty = "n")
+```
+
+---------------------------------------------------------
+Probability  Roll 1d20      With Criticals Roll 3z8
+------------ -------------- -------------- --------------
+50%          12             15             9
+
+75%          16             23             11
+
+90%          18             28             14
+
+95%          19             29             15
+-----------------------------------------------------
+
+
+Making multiple checks exagerates the differences we saw previously.  Part of the reason for the poor performance with the addition of criticals (and for the funny shape of the critical curve) is there is a different cost associated with criticals for the rogue compared to the guards.  If the guards roll a 20 or the rogue rolls a 1, when criticals are in play, the guards will almost certainly win, even if the rogue has a much higher modifier.  On the other hand, if the guard rolls a 1 or the rogue rolls a 20, there isn't much difference in outcome between getting that critical and any other low/high roll; play continues to the next round.
+
+## How Does This Apply to Data Science?
+
+Many times as data scientists, we think of the predictions we make as discrete data points and when we evaluate our models we use aggregate metrics.  It is easy to lose sight that our predictions are samples from a probability distribution, and that aggregate measures can obscure how well our model is really performing.  We saw in the example with criticals where big hits and misses can make a huge impact on outcomes, even if the average performance is largely the same.  We also saw with the 3z8 system where decreasing the expected value of the roll can actually increase performance by making the "average" outcome more likely.
+
+Does all of this sound contrived to you, like I am trying to force an analogy?  Let me make a concrete example from my real life data science job.  I am responsible for making the machine learning revenue forecasts for Microsoft.  Twice a quarter, I forecast the revenue for all of the products at Microsoft world wide.    While these product forecasts do need to be accurate for internal use, the forecasts are also summed up to create segment level forecasts.  Microsoft's segment level forecasts go to Wall Street and having our forecasts fail to meet actuals can be a big problem for the company.  We can think about our rogue sneaking past our guards as being an analogy for nailing the segment level forecast.  If I succeed for most of the products (our individual guards) but have a critical miss of \$1 billion error on one of them, then I have a \$1 billion error for the segment and I failed.  Also like our rogue, one success doesn't mean we have won.  There is always another quarter and doing well one quarter doesn't mean Wall Street will cut you some slack the next.  Finally, a critical success is less valuable than a critical failure is problematic.  Getting the forecasts perfect one quarter will just get your a "good job" and a pat on the back, but a big miss costs the company.  In this context, it is easy to see why the finance team doesn't take the machine learning forecasts as gospel, even with our track record of high accuracy.
+
+So as you evaluate your models, keep our sneaky friend in mind.  Rather than just thinking about your average metrics, think about your distribution of errors.  Are your errors clustered nicely around the mean or are they scattershot of low and high?  What does that mean for your application?  Are those really low errors valuable enough to be worth getting the really high ones from time to time?  Many times having a *reliable* model may be more valuable than a less realiable one with higher average performance, so when you evaluate, think distributions, not means.
